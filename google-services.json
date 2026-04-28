@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "338121571559",
+    "project_id": "auto-post-ai-1959f",
+    "storage_bucket": "auto-post-ai-1959f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:338121571559:android:6892aada67eb01f004f642",
+        "android_client_info": {
+          "package_name": "com.autopost.ai"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAdOoH2qI_aCGG1u-vnTzMVrKbRzL5J4XA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
