@@ -4,7 +4,11 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { logger } = require('./utils/logger');
+const { validateEnv } = require('./utils/validateEnv');
 const { startQueueWorkers } = require('./queues/workers');
+
+// ── Validate env before anything else ────────────────────────
+validateEnv();
 
 const app = express();
 
@@ -20,6 +24,17 @@ app.use(rateLimit({
   max: 200,
   message: { error: 'Too many requests, please try again later.' }
 }));
+
+// ── Request logger ────────────────────────────────────────────
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const ms = Date.now() - start;
+    const level = res.statusCode >= 400 ? 'warn' : 'info';
+    logger[level](`${req.method} ${req.path} ${res.statusCode} ${ms}ms`);
+  });
+  next();
+});
 
 // ── Routes ───────────────────────────────────────────────────
 app.use('/api/auth',       require('./routes/auth'));
@@ -37,8 +52,25 @@ app.get('/health', (req, res) => res.json({ status: 'ok', ts: new Date() }));
 
 // ── Error Handler ────────────────────────────────────────────
 app.use((err, req, res, next) => {
-  logger.error(err.stack);
-  res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
+  logger.error(`${req.method} ${req.path} → ${err.message}`);
+
+  // Validation errors
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'Invalid JSON in request body' });
+  }
+
+  // JWT errors
+  if (err.name === 'JsonWebTokenError') {
+    return res.status(401).json({ error: 'Invalid token', code: 'INVALID_TOKEN' });
+  }
+  if (err.name === 'TokenExpiredError') {
+    return res.status(401).json({ error: 'Token expired', code: 'TOKEN_EXPIRED' });
+  }
+
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal server error',
+    code: err.code || 'SERVER_ERROR',
+  });
 });
 
 // ── Start ────────────────────────────────────────────────────

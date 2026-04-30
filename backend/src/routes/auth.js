@@ -49,17 +49,44 @@ router.post('/register', [
 
 // ── Login ─────────────────────────────────────────────────────
 router.post('/login', [
-  body('email').isEmail(),
-  body('password').notEmpty()
+  body('email').isEmail().withMessage('Enter a valid email'),
+  body('password').notEmpty().withMessage('Password is required')
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
   const { email, password } = req.body;
-  const { data: user } = await supabase.from('users').select('*').eq('email', email).single();
 
-  if (!user || !(await bcrypt.compare(password, user.password_hash))) {
-    return res.status(401).json({ error: 'Invalid credentials' });
+  // Find user
+  const { data: user, error: dbError } = await supabase
+    .from('users')
+    .select('*')
+    .eq('email', email.toLowerCase().trim())
+    .single();
+
+  // Specific: user not found
+  if (dbError || !user) {
+    return res.status(401).json({
+      error: 'No account found with this email.',
+      code: 'USER_NOT_FOUND'
+    });
+  }
+
+  // Specific: wrong password
+  const passwordMatch = await bcrypt.compare(password, user.password_hash);
+  if (!passwordMatch) {
+    return res.status(401).json({
+      error: 'Incorrect password. Please try again.',
+      code: 'WRONG_PASSWORD'
+    });
+  }
+
+  // Specific: account disabled
+  if (user.is_disabled) {
+    return res.status(403).json({
+      error: 'This account has been disabled. Contact support.',
+      code: 'ACCOUNT_DISABLED'
+    });
   }
 
   res.json({ token: signToken(user.id), user: sanitize(user) });

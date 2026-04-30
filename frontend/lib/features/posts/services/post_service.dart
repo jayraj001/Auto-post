@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/config/app_config.dart';
 
 // ── Provider ──────────────────────────────────────────────────
 final postServiceProvider = Provider<PostService>((ref) => PostService());
@@ -38,32 +39,26 @@ class PostModel {
 
 // ── PostService ───────────────────────────────────────────────
 class PostService {
-  static const String _baseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:5000/api',
-  );
-
-  final Dio _dio = Dio(BaseOptions(
-    baseUrl: _baseUrl,
-    connectTimeout: const Duration(seconds: 10),
-    receiveTimeout: const Duration(seconds: 10),
-  ));
+  late final Dio _dio;
 
   PostService() {
-    // ── Logging interceptor — prints request + response.body ──
+    _dio = Dio(BaseOptions(
+      baseUrl: AppConfig.apiBaseUrl,
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 15),
+    ));
+
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) {
         debugPrint('── API REQUEST ──────────────────────────');
         debugPrint('${options.method} ${options.uri}');
-        debugPrint('Headers: ${options.headers}');
-        debugPrint('Body: ${options.data}');
+        if (AppConfig.isDev) debugPrint('Body: ${options.data}');
         handler.next(options);
       },
       onResponse: (response, handler) {
-        // Equivalent to: print(response.body)
         debugPrint('── API RESPONSE ─────────────────────────');
         debugPrint('Status: ${response.statusCode}');
-        debugPrint('Body: ${response.data}');
+        if (AppConfig.isDev) debugPrint('Body: ${response.data}');
         handler.next(response);
       },
       onError: (DioException e, handler) {

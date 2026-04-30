@@ -4,22 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/auth_service.dart';
-import '../../home/screens/home_screen.dart';
 
-// ── Standalone signIn function (exactly as requested) ─────────
-Future<void> signIn(String email, String password) async {
-  try {
-    await FirebaseAuth.instance.signInWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
-    debugPrint('Login Success');
-  } catch (e) {
-    debugPrint('Error: $e');
-  }
-}
-
-// ── Login Screen ──────────────────────────────────────────────
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -28,14 +13,12 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
-  final _formKey = GlobalKey<FormState>();
-
-  // Named exactly as requested
+  final _formKey          = GlobalKey<FormState>();
   final emailController    = TextEditingController();
   final passwordController = TextEditingController();
 
-  bool _loading = false;
-  bool _obscure = true;
+  bool    _loading = false;
+  bool    _obscure = true;
   String? _errorMsg;
 
   @override
@@ -58,7 +41,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               children: [
                 const SizedBox(height: 40),
 
-                // ── Logo ─────────────────────────────────────
+                // ── Logo ──────────────────────────────────────
                 Row(children: [
                   Container(
                     width: 44, height: 44,
@@ -82,7 +65,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         fontSize: 28, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 Text('Sign in to manage your social media',
-                    style: TextStyle(color: Colors.grey[600], fontSize: 15)),
+                    style: TextStyle(
+                        color: Colors.grey[600], fontSize: 15)),
                 const SizedBox(height: 32),
 
                 // ── Error banner ──────────────────────────────
@@ -90,10 +74,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.1),
+                      color: Colors.red.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
-                      border:
-                          Border.all(color: Colors.red.withOpacity(0.3)),
+                      border: Border.all(
+                          color: Colors.red.withValues(alpha: 0.3)),
                     ),
                     child: Row(children: [
                       const Icon(Icons.error_outline,
@@ -109,27 +93,29 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   const SizedBox(height: 16),
                 ],
 
-                // ── Email field ───────────────────────────────
+                // ── Email ─────────────────────────────────────
                 TextFormField(
                   controller: emailController,
                   keyboardType: TextInputType.emailAddress,
                   textInputAction: TextInputAction.next,
+                  autocorrect: false,
                   decoration: const InputDecoration(
                     labelText: 'Email',
                     prefixIcon: Icon(Icons.email_outlined),
                   ),
-                  validator: (v) => v != null && v.contains('@')
-                      ? null
-                      : 'Enter a valid email',
+                  validator: (v) =>
+                      v != null && v.contains('@')
+                          ? null
+                          : 'Enter a valid email',
                 ),
                 const SizedBox(height: 16),
 
-                // ── Password field ────────────────────────────
+                // ── Password ──────────────────────────────────
                 TextFormField(
                   controller: passwordController,
                   obscureText: _obscure,
                   textInputAction: TextInputAction.done,
-                  onFieldSubmitted: (_) => _onSignInPressed(),
+                  onFieldSubmitted: (_) => _onSignIn(),
                   decoration: InputDecoration(
                     labelText: 'Password',
                     prefixIcon: const Icon(Icons.lock_outline),
@@ -141,9 +127,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           setState(() => _obscure = !_obscure),
                     ),
                   ),
-                  validator: (v) => v != null && v.length >= 6
-                      ? null
-                      : 'Minimum 6 characters',
+                  validator: (v) =>
+                      v != null && v.length >= 6
+                          ? null
+                          : 'Minimum 6 characters',
                 ),
                 const SizedBox(height: 8),
 
@@ -158,32 +145,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 const SizedBox(height: 16),
 
                 // ── Sign In button ────────────────────────────
-                // Calls signIn(emailController.text, passwordController.text)
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _loading
-                        ? null
-                        : () {
-                            signIn(
-                              emailController.text,
-                              passwordController.text,
-                            );
-                            _onSignInPressed();
-                          },
+                    onPressed: _loading ? null : _onSignIn,
                     child: _loading
                         ? const SizedBox(
-                            width: 20,
-                            height: 20,
+                            width: 20, height: 20,
                             child: CircularProgressIndicator(
-                                color: Colors.white, strokeWidth: 2),
-                          )
-                        : const Text(
-                            'Sign In',
+                                color: Colors.white, strokeWidth: 2))
+                        : const Text('Sign In',
                             style: TextStyle(
                                 fontSize: 16,
-                                fontWeight: FontWeight.w600),
-                          ),
+                                fontWeight: FontWeight.w600)),
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -192,8 +166,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 Row(children: [
                   const Expanded(child: Divider()),
                   Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: Text('or',
                         style: TextStyle(color: Colors.grey[500])),
                   ),
@@ -205,7 +178,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    onPressed: _loading ? null : _googleSignIn,
+                    onPressed: _loading ? null : _onGoogleSignIn,
                     icon: const Icon(Icons.g_mobiledata, size: 26),
                     label: const Text('Continue with Google'),
                     style: OutlinedButton.styleFrom(
@@ -240,27 +213,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
-  // ── Called by the ElevatedButton ─────────────────────────────
-  Future<void> _onSignInPressed() async {
+  // ── Sign In ───────────────────────────────────────────────────
+  Future<void> _onSignIn() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() {
-      _loading = true;
-      _errorMsg = null;
-    });
+    setState(() { _loading = true; _errorMsg = null; });
 
     try {
       await ref.read(authServiceProvider).signIn(
-            emailController.text,
-            passwordController.text,
-          );
-
-      if (!mounted) return;
-
-      // Navigate to HomeScreen exactly as requested
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const HomeScreen()),
+        emailController.text.trim(),
+        passwordController.text,
       );
+      // GoRouter redirect handles navigation automatically
+      // authStateProvider stream fires → router redirects to /dashboard
     } on FirebaseAuthException catch (e) {
       setState(() => _errorMsg = AuthService.errorMessage(e));
     } catch (e) {
@@ -271,32 +235,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   // ── Google Sign In ────────────────────────────────────────────
-  Future<void> _googleSignIn() async {
-    setState(() {
-      _loading = true;
-      _errorMsg = null;
-    });
+  Future<void> _onGoogleSignIn() async {
+    setState(() { _loading = true; _errorMsg = null; });
     try {
-      final result =
-          await ref.read(authServiceProvider).signInWithGoogle();
-
+      final result = await ref.read(authServiceProvider).signInWithGoogle();
       if (!mounted) return;
-
       if (result == null) {
         setState(() => _errorMsg = 'Google sign-in was cancelled.');
-        return;
       }
-
-      // Navigate to HomeScreen exactly as requested
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const HomeScreen()),
-      );
+      // GoRouter handles redirect on success
     } on FirebaseAuthException catch (e) {
       setState(() => _errorMsg = AuthService.errorMessage(e));
     } catch (e) {
-      setState(
-          () => _errorMsg = 'Google sign-in failed. Please try again.');
+      setState(() => _errorMsg = 'Google sign-in failed. Please try again.');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
