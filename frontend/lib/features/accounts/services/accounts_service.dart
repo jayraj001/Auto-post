@@ -13,11 +13,29 @@ final accountsProvider = FutureProvider<List<SocialAccount>>((ref) async {
 });
 
 class AccountsService {
-  final Dio _dio = Dio(BaseOptions(
-    baseUrl: AppConfig.apiBaseUrl,
-    connectTimeout: const Duration(seconds: 15),
-    receiveTimeout: const Duration(seconds: 15),
-  ));
+  late final Dio _dio;
+
+  AccountsService() {
+    _dio = Dio(BaseOptions(
+      baseUrl: AppConfig.apiBaseUrl,
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 15),
+    ));
+
+    _dio.interceptors.add(InterceptorsWrapper(
+      onResponse: (response, handler) {
+        debugPrint('── ACCOUNTS API ─────────────────────────');
+        debugPrint('${response.requestOptions.method} '
+            '${response.requestOptions.path} → ${response.statusCode}');
+        handler.next(response);
+      },
+      onError: (DioException e, handler) {
+        debugPrint('── ACCOUNTS ERROR ───────────────────────');
+        debugPrint('${e.response?.statusCode}: ${e.response?.data}');
+        handler.next(e);
+      },
+    ));
+  }
 
   Future<String?> _token() async =>
       await FirebaseAuth.instance.currentUser?.getIdToken();
@@ -34,43 +52,17 @@ class AccountsService {
       final list = response.data as List;
       debugPrint('Accounts fetched: ${list.length}');
       return list.map((e) => SocialAccount.fromJson(e)).toList();
-    } catch (e) {
-      debugPrint('fetchAccounts error: $e');
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      if (status == 401) {
+        debugPrint('fetchAccounts: unauthorized — user not logged in');
+      } else {
+        debugPrint('fetchAccounts error [$status]: ${e.response?.data}');
+      }
       return [];
-    }
-  }
-
-  // ── POST /connect-account ─────────────────────────────────
-  // Called after OAuth callback with the received token
-  Future<SocialAccount?> connectAccount({
-    required String platform,
-    required String accessToken,
-    required String platformUserId,
-    required String username,
-    required String displayName,
-    String? avatarUrl,
-    String? refreshToken,
-    String? pageId,
-  }) async {
-    try {
-      final response = await _dio.post(
-        '/accounts/connect/$platform',
-        data: {
-          'access_token': accessToken,
-          'platform_user_id': platformUserId,
-          'username': username,
-          'display_name': displayName,
-          'avatar_url': avatarUrl,
-          if (refreshToken != null) 'refresh_token': refreshToken,
-          if (pageId != null) 'page_id': pageId,
-        },
-        options: await _opts(),
-      );
-      debugPrint('Account connected: ${response.data}');
-      return SocialAccount.fromJson(response.data);
     } catch (e) {
-      debugPrint('connectAccount error: $e');
-      return null;
+      debugPrint('fetchAccounts unexpected error: $e');
+      return [];
     }
   }
 
@@ -80,15 +72,24 @@ class AccountsService {
       await _dio.delete('/accounts/$accountId', options: await _opts());
       debugPrint('Account disconnected: $accountId');
       return true;
-    } catch (e) {
-      debugPrint('disconnectAccount error: $e');
+    } on DioException catch (e) {
+      debugPrint('disconnectAccount error: ${e.response?.data}');
       return false;
     }
   }
 
-  // ── Build OAuth URL ───────────────────────────────────────
-  // Returns the URL to open in a WebView / browser for OAuth
-  String buildOAuthUrl(SocialPlatform platform) {
-    return '$_baseUrl${platform.oauthPath}';
+  // ── POST /oauth/refresh/:platform/:accountId ──────────────
+  Future<bool> refreshToken(String platform, String accountId) async {
+    try {
+      await _dio.post(
+        '/oauth/refresh/$platform/$accountId',
+        options: await _opts(),
+      );
+      debugPrint('Token refreshed: $platform / $accountId');
+      return true;
+    } on DioException catch (e) {
+      debugPrint('refreshToken error: ${e.response?.data}');
+      return false;
+    }
   }
 }

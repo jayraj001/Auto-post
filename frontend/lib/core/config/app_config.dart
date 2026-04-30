@@ -9,22 +9,18 @@ class AppConfig {
   static const String _defined = String.fromEnvironment('API_BASE_URL');
 
   static String get apiBaseUrl {
-    // 1. Explicit override via --dart-define
     if (_defined.isNotEmpty) return _defined;
-
-    // 2. Auto-detect: Android emulator uses 10.0.2.2 to reach host
-    if (Platform.isAndroid) {
-      return 'http://10.0.2.2:5000/api';
-    }
-
-    // 3. iOS simulator uses localhost
-    if (Platform.isIOS) {
-      return 'http://localhost:5000/api';
-    }
-
-    // 4. Fallback
+    if (Platform.isAndroid) return 'http://10.0.2.2:5000/api';
+    if (Platform.isIOS)     return 'http://localhost:5000/api';
     return 'http://localhost:5000/api';
   }
+
+  // ── OAuth deep link scheme ────────────────────────────────
+  // Backend redirects to: autopostai://oauth-result?success=true&platform=facebook
+  static const String oauthScheme    = 'autopostai';
+  static const String oauthHost      = 'oauth-result';
+  static String get oauthRedirectUri =>
+      '$oauthScheme://$oauthHost';
 
   // ── Environment ───────────────────────────────────────────
   static const bool isProduction =

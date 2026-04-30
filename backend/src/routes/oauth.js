@@ -9,16 +9,42 @@ const { encrypt } = require('../utils/encrypt');
 const { logger } = require('../utils/logger');
 
 // ── Helpers ───────────────────────────────────────────────────
+// Deep link scheme for mobile app callback
+const MOBILE_SCHEME = 'autopostai://oauth-result';
 const FRONTEND_REDIRECT = process.env.FRONTEND_URL || 'http://localhost:3001';
 
 function oauthError(res, msg) {
-  return res.redirect(`${FRONTEND_REDIRECT}/oauth-result?error=${encodeURIComponent(msg)}`);
+  // Try mobile deep link first, fallback to web redirect
+  const mobileUrl = `${MOBILE_SCHEME}?error=${encodeURIComponent(msg)}`;
+  const webUrl    = `${FRONTEND_REDIRECT}/oauth-result?error=${encodeURIComponent(msg)}`;
+  // Redirect to mobile deep link (browser will hand off to app)
+  return res.redirect(mobileUrl);
 }
 
 function oauthSuccess(res, platform, username) {
-  return res.redirect(
-    `${FRONTEND_REDIRECT}/oauth-result?success=true&platform=${platform}&username=${encodeURIComponent(username)}`
-  );
+  const mobileUrl = `${MOBILE_SCHEME}?success=true&platform=${platform}&username=${encodeURIComponent(username)}`;
+  logger.info(`OAuth success: ${platform} (@${username})`);
+  return res.redirect(mobileUrl);
+}
+
+async function saveAccount(data) {
+  const { data: account, error } = await supabase
+    .from('social_accounts')
+    .upsert(data, { onConflict: 'platform,platform_user_id' })
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message);
+
+  // ── Token saved confirmation ──────────────────────────────
+  logger.info(`Token saved: ${JSON.stringify({
+    id:       account.id,
+    platform: account.platform,
+    username: account.username,
+    status:   'connected',
+  })}`);
+
+  return account;
 }
 
 // ── Instagram / Facebook (Meta) ───────────────────────────────
@@ -88,7 +114,7 @@ function handleMetaCallback(platform) {
       const pageId    = page?.id;
       const pageToken = page?.access_token || access_token;
 
-      const { error: dbError } = await supabase.from('social_accounts').upsert({
+      const { error: dbError } = await saveAccount({
         platform,
         platform_user_id: userId,
         username:     displayName.toLowerCase().replace(/\s/g, ''),
@@ -97,7 +123,9 @@ function handleMetaCallback(platform) {
         access_token: encrypt(pageToken),
         page_id:      pageId,
         is_active:    true,
-      }, { onConflict: 'platform,platform_user_id' });
+        token_expired: false,
+        status:       'connected',
+      });
 
       if (dbError) throw new Error(dbError.message);
       oauthSuccess(res, platform, displayName);
@@ -153,15 +181,17 @@ router.get('/twitter/callback', async (req, res) => {
 
     const { id, name, username } = meRes.data.data;
 
-    await supabase.from('social_accounts').upsert({
+    await saveAccount({
       platform: 'twitter',
       platform_user_id: id,
       username,
       display_name: name,
-      access_token: encrypt(access_token),
+      access_token:  encrypt(access_token),
       refresh_token: refresh_token ? encrypt(refresh_token) : null,
-      is_active: true,
-    }, { onConflict: 'platform,platform_user_id' });
+      is_active:     true,
+      token_expired: false,
+      status:        'connected',
+    });
 
     oauthSuccess(res, 'twitter', username);
   } catch (err) {
@@ -210,14 +240,16 @@ router.get('/linkedin/callback', async (req, res) => {
     const lastName = meRes.data.localizedLastName;
     const displayName = `${firstName} ${lastName}`;
 
-    await supabase.from('social_accounts').upsert({
+    await saveAccount({
       platform: 'linkedin',
       platform_user_id: id,
       username: displayName.toLowerCase().replace(/\s/g, '.'),
       display_name: displayName,
-      access_token: encrypt(access_token),
-      is_active: true,
-    }, { onConflict: 'platform,platform_user_id' });
+      access_token:  encrypt(access_token),
+      is_active:     true,
+      token_expired: false,
+      status:        'connected',
+    });
 
     oauthSuccess(res, 'linkedin', displayName);
   } catch (err) {
@@ -268,16 +300,18 @@ router.get('/youtube/callback', async (req, res) => {
     const channelTitle = channel?.snippet?.title;
     const avatarUrl = channel?.snippet?.thumbnails?.default?.url;
 
-    await supabase.from('social_accounts').upsert({
+    await saveAccount({
       platform: 'youtube',
       platform_user_id: channelId,
-      username: channelTitle?.toLowerCase().replace(/\s/g, ''),
-      display_name: channelTitle,
-      avatar_url: avatarUrl,
-      access_token: encrypt(access_token),
+      username:      channelTitle?.toLowerCase().replace(/\s/g, ''),
+      display_name:  channelTitle,
+      avatar_url:    avatarUrl,
+      access_token:  encrypt(access_token),
       refresh_token: refresh_token ? encrypt(refresh_token) : null,
-      is_active: true,
-    }, { onConflict: 'platform,platform_user_id' });
+      is_active:     true,
+      token_expired: false,
+      status:        'connected',
+    });
 
     oauthSuccess(res, 'youtube', channelTitle);
   } catch (err) {
