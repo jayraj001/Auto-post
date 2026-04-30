@@ -4,6 +4,7 @@ import '../../features/auth/screens/login_screen.dart';
 import '../../features/auth/screens/register_screen.dart';
 import '../../features/auth/screens/forgot_password_screen.dart';
 import '../../features/auth/services/auth_service.dart';
+import '../../features/accounts/screens/accounts_screen.dart';
 import '../../features/dashboard/screens/dashboard_screen.dart';
 import '../../features/home/screens/home_screen.dart';
 import '../../features/posts/screens/create_post_screen.dart';
@@ -51,6 +52,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/analytics',  builder: (_, __) => const AnalyticsScreen()),
           GoRoute(path: '/automation', builder: (_, __) => const AutomationScreen()),
           GoRoute(path: '/settings',   builder: (_, __) => const SettingsScreen()),
+          GoRoute(path: '/accounts',   builder: (_, __) => const AccountsScreen()),
           GoRoute(path: '/plans',      builder: (_, __) => const PlansScreen()),
         ],
       ),

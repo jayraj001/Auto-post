@@ -1,18 +1,21 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
 import '../../../core/theme/app_theme.dart';
+import '../services/post_service.dart';
+import '../services/firestore_post_service.dart';
 
-class CreatePostScreen extends StatefulWidget {
+class CreatePostScreen extends ConsumerStatefulWidget {
   const CreatePostScreen({super.key});
 
   @override
-  State<CreatePostScreen> createState() => _CreatePostScreenState();
+  ConsumerState<CreatePostScreen> createState() => _CreatePostScreenState();
 }
 
-class _CreatePostScreenState extends State<CreatePostScreen> {
+class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   final _captionCtrl = TextEditingController();
   final Set<String> _selectedPlatforms = {'instagram'};
   DateTime? _scheduledAt;
@@ -177,11 +180,47 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   void _next() { if (_step < 2) setState(() => _step++); }
 
   Future<void> _publish() async {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(_scheduledAt != null ? 'Post scheduled! ✅' : 'Post published! 🚀'),
-      backgroundColor: AppTheme.secondary,
-    ));
-    context.go('/dashboard');
+    if (_captionCtrl.text.trim().isEmpty && _mediaFiles.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Add a caption or media before posting.'),
+        backgroundColor: Colors.red,
+      ));
+      return;
+    }
+
+    setState(() {});
+
+    try {
+      final mediaUrls = _mediaFiles.map((f) => f.path).toList();
+      final primaryMediaUrl = mediaUrls.isNotEmpty ? mediaUrls.first : '';
+
+      // ── Save to Firestore ──────────────────────────────────
+      // FirebaseFirestore.instance.collection('posts').add({...})
+      await ref.read(firestorePostServiceProvider).savePost(
+        caption: _captionCtrl.text.trim(),
+        mediaUrl: primaryMediaUrl,
+        platform: _selectedPlatforms.first,
+        scheduledTime: _scheduledAt,
+        mediaUrls: mediaUrls,
+        platforms: _selectedPlatforms.toList(),
+        mediaType: _isVideo ? 'video' : 'image',
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(_scheduledAt != null
+            ? 'Post scheduled for ${_scheduledAt!.day}/${_scheduledAt!.month} ✅'
+            : 'Post published! 🚀'),
+        backgroundColor: AppTheme.secondary,
+      ));
+      context.go('/dashboard');
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Failed to save post: $e'),
+        backgroundColor: Colors.red,
+      ));
+    }
   }
 }
 

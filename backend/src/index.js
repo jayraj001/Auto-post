@@ -22,14 +22,15 @@ app.use(rateLimit({
 }));
 
 // ── Routes ───────────────────────────────────────────────────
-app.use('/v1/auth',       require('./routes/auth'));
-app.use('/v1/accounts',   require('./routes/accounts'));
-app.use('/v1/posts',      require('./routes/posts'));
-app.use('/v1/ai',         require('./routes/ai'));
-app.use('/v1/analytics',  require('./routes/analytics'));
-app.use('/v1/automation', require('./routes/automation'));
-app.use('/v1/billing',    require('./routes/billing'));
-app.use('/v1/referrals',  require('./routes/referrals'));
+app.use('/api/auth',       require('./routes/auth'));
+app.use('/api/accounts',   require('./routes/accounts'));
+app.use('/api/oauth',      require('./routes/oauth'));
+app.use('/api/posts',      require('./routes/posts'));
+app.use('/api/ai',         require('./routes/ai'));
+app.use('/api/analytics',  require('./routes/analytics'));
+app.use('/api/automation', require('./routes/automation'));
+app.use('/api/billing',    require('./routes/billing'));
+app.use('/api/referrals',  require('./routes/referrals'));
 
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok', ts: new Date() }));
@@ -41,7 +42,7 @@ app.use((err, req, res, next) => {
 });
 
 // ── Start ────────────────────────────────────────────────────
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   logger.info(`AutoPost AI API running on port ${PORT}`);
   startQueueWorkers();
