@@ -74,21 +74,50 @@ function oauthSuccess(res, platform, username) {
   );
 }
 
-async function saveAccount(data) {
+// ── Extract user_id from state param ─────────────────────────
+// Flutter passes Firebase UID as state: ?state=<uid>
+function getUserIdFromState(state) {
+  if (!state || state === 'state') return null;
+  return state;
+}
+
+// ── saveAccount ───────────────────────────────────────────────
+// Exactly: await saveAccount({ user_id, platform, access_token, status: 'connected' })
+async function saveAccount({ user_id, platform, platform_user_id, username,
+  display_name, avatar_url, access_token, refresh_token, page_id, status = 'connected' }) {
+
+  const record = {
+    platform,
+    platform_user_id,
+    username,
+    display_name,
+    avatar_url,
+    access_token,          // already encrypted before calling saveAccount
+    refresh_token:  refresh_token || null,
+    page_id:        page_id || null,
+    is_active:      true,
+    token_expired:  false,
+    status,
+  };
+
+  // Attach user_id only if provided (Firebase UID from state param)
+  if (user_id) record.user_id = user_id;
+
   const { data: account, error } = await supabase
     .from('social_accounts')
-    .upsert(data, { onConflict: 'platform,platform_user_id' })
+    .upsert(record, { onConflict: 'platform,platform_user_id' })
     .select()
     .single();
 
   if (error) throw new Error(error.message);
 
-  // Confirm token saved
+  // ── Confirm token saved ───────────────────────────────────
   logger.info(`Token saved: ${JSON.stringify({
     id:       account.id,
+    user_id:  account.user_id,
     platform: account.platform,
     username: account.username,
-    status:   'connected',
+    status:   account.status,
   })}`);
 
   return account;
@@ -97,9 +126,12 @@ async function saveAccount(data) {
 // ─────────────────────────────────────────────────────────────
 // GET /api/oauth/:platform
 // Redirects user to the provider's OAuth login page
+// Flutter passes Firebase UID as ?state=<uid>
 // ─────────────────────────────────────────────────────────────
 router.get('/:platform', (req, res) => {
   const { platform } = req.params;
+  const state = req.query.state || '';   // Firebase UID passed from Flutter
+
   const config = getPlatformConfig(platform);
 
   if (!config) {
@@ -115,9 +147,8 @@ router.get('/:platform', (req, res) => {
     });
   }
 
-  logger.info(`OAuth init: ${platform}`);
+  logger.info(`OAuth init: ${platform} (user: ${state || 'anonymous'})`);
 
-  // Build provider-specific auth URL params
   let params;
 
   if (platform === 'twitter') {
@@ -126,7 +157,7 @@ router.get('/:platform', (req, res) => {
       client_id:             config.clientId,
       redirect_uri:          config.redirectUri,
       scope:                 config.scope,
-      state:                 req.query.state || 'state',
+      state,
       code_challenge:        'challenge',
       code_challenge_method: 'plain',
     });
@@ -138,16 +169,15 @@ router.get('/:platform', (req, res) => {
       scope:         config.scope,
       access_type:   'offline',
       prompt:        'consent',
-      state:         req.query.state || '',
+      state,
     });
   } else {
-    // Facebook, Instagram, LinkedIn
     params = new URLSearchParams({
       client_id:     config.clientId,
       redirect_uri:  config.redirectUri,
       scope:         config.scope,
       response_type: 'code',
-      state:         req.query.state || '',
+      state,
     });
   }
 
@@ -160,7 +190,7 @@ router.get('/:platform', (req, res) => {
 // ─────────────────────────────────────────────────────────────
 router.get('/:platform/callback', async (req, res) => {
   const { platform } = req.params;
-  const { code, error, error_description } = req.query;
+  const { code, error, error_description, state } = req.query;
 
   // User cancelled or provider returned error
   if (error) {
@@ -176,19 +206,21 @@ router.get('/:platform/callback', async (req, res) => {
     return oauthError(res, `Unsupported platform: ${platform}`);
   }
 
-  logger.info(`OAuth callback: ${platform}`);
+  // Extract Firebase UID from state param (passed by Flutter)
+  const user_id = getUserIdFromState(state);
+  logger.info(`OAuth callback: ${platform} (user_id: ${user_id || 'not provided'})`);
 
   try {
     switch (platform) {
       case 'facebook':
       case 'instagram':
-        return await handleMetaCallback(req, res, platform, config);
+        return await handleMetaCallback(req, res, platform, config, user_id);
       case 'twitter':
-        return await handleTwitterCallback(req, res, config);
+        return await handleTwitterCallback(req, res, config, user_id);
       case 'linkedin':
-        return await handleLinkedInCallback(req, res, config);
+        return await handleLinkedInCallback(req, res, config, user_id);
       case 'youtube':
-        return await handleYouTubeCallback(req, res, config);
+        return await handleYouTubeCallback(req, res, config, user_id);
       default:
         return oauthError(res, `No callback handler for: ${platform}`);
     }
@@ -199,44 +231,31 @@ router.get('/:platform/callback', async (req, res) => {
 });
 
 // ── Meta (Facebook / Instagram) callback ─────────────────────
-async function handleMetaCallback(req, res, platform, config) {
+async function handleMetaCallback(req, res, platform, config, user_id) {
   const { code } = req.query;
 
-  // Exchange code for token
   const tokenRes = await axios.get(
     'https://graph.facebook.com/v18.0/oauth/access_token',
-    {
-      params: {
-        client_id:     config.clientId,
-        client_secret: config.clientSecret,
-        redirect_uri:  config.redirectUri,
-        code,
-      },
-    }
+    { params: { client_id: config.clientId, client_secret: config.clientSecret, redirect_uri: config.redirectUri, code } }
   );
-
   const { access_token } = tokenRes.data;
 
-  // Get user profile
   const meRes = await axios.get('https://graph.facebook.com/v18.0/me', {
     params: { fields: 'id,name,picture', access_token },
   });
-
   const userId      = meRes.data.id;
   const displayName = meRes.data.name;
   const avatarUrl   = meRes.data.picture?.data?.url;
 
-  // Get managed pages (for posting)
-  const pagesRes = await axios.get(
-    `https://graph.facebook.com/v18.0/${userId}/accounts`,
-    { params: { access_token } }
-  );
-
+  const pagesRes = await axios.get(`https://graph.facebook.com/v18.0/${userId}/accounts`, {
+    params: { access_token },
+  });
   const page      = pagesRes.data.data?.[0];
   const pageId    = page?.id;
   const pageToken = page?.access_token || access_token;
 
   await saveAccount({
+    user_id,
     platform,
     platform_user_id: userId,
     username:         displayName.toLowerCase().replace(/\s+/g, ''),
@@ -244,8 +263,6 @@ async function handleMetaCallback(req, res, platform, config) {
     avatar_url:       avatarUrl,
     access_token:     encrypt(pageToken),
     page_id:          pageId,
-    is_active:        true,
-    token_expired:    false,
     status:           'connected',
   });
 
@@ -253,7 +270,7 @@ async function handleMetaCallback(req, res, platform, config) {
 }
 
 // ── Twitter callback ──────────────────────────────────────────
-async function handleTwitterCallback(req, res, config) {
+async function handleTwitterCallback(req, res, config, user_id) {
   const { code } = req.query;
 
   const tokenRes = await axios.post(
@@ -266,28 +283,25 @@ async function handleTwitterCallback(req, res, config) {
       code_verifier: 'challenge',
     }),
     {
-      auth: { username: config.clientId, password: config.clientSecret },
+      auth:    { username: config.clientId, password: config.clientSecret },
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     }
   );
-
   const { access_token, refresh_token } = tokenRes.data;
 
   const meRes = await axios.get('https://api.twitter.com/2/users/me', {
     headers: { Authorization: `Bearer ${access_token}` },
   });
-
   const { id, name, username } = meRes.data.data;
 
   await saveAccount({
+    user_id,
     platform:         'twitter',
     platform_user_id: id,
     username,
     display_name:     name,
     access_token:     encrypt(access_token),
     refresh_token:    refresh_token ? encrypt(refresh_token) : null,
-    is_active:        true,
-    token_expired:    false,
     status:           'connected',
   });
 
@@ -295,37 +309,34 @@ async function handleTwitterCallback(req, res, config) {
 }
 
 // ── LinkedIn callback ─────────────────────────────────────────
-async function handleLinkedInCallback(req, res, config) {
+async function handleLinkedInCallback(req, res, config, user_id) {
   const { code } = req.query;
 
   const tokenRes = await axios.post(
     'https://www.linkedin.com/oauth/v2/accessToken',
     new URLSearchParams({
-      grant_type:   'authorization_code',
+      grant_type:    'authorization_code',
       code,
-      redirect_uri: config.redirectUri,
-      client_id:    config.clientId,
+      redirect_uri:  config.redirectUri,
+      client_id:     config.clientId,
       client_secret: config.clientSecret,
     }),
     { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
   );
-
   const { access_token } = tokenRes.data;
 
   const meRes = await axios.get('https://api.linkedin.com/v2/me', {
     headers: { Authorization: `Bearer ${access_token}` },
   });
-
   const displayName = `${meRes.data.localizedFirstName} ${meRes.data.localizedLastName}`;
 
   await saveAccount({
+    user_id,
     platform:         'linkedin',
     platform_user_id: meRes.data.id,
     username:         displayName.toLowerCase().replace(/\s+/g, '.'),
     display_name:     displayName,
     access_token:     encrypt(access_token),
-    is_active:        true,
-    token_expired:    false,
     status:           'connected',
   });
 
@@ -333,7 +344,7 @@ async function handleLinkedInCallback(req, res, config) {
 }
 
 // ── YouTube callback ──────────────────────────────────────────
-async function handleYouTubeCallback(req, res, config) {
+async function handleYouTubeCallback(req, res, config, user_id) {
   const { code } = req.query;
 
   const tokenRes = await axios.post('https://oauth2.googleapis.com/token', {
@@ -343,23 +354,19 @@ async function handleYouTubeCallback(req, res, config) {
     redirect_uri:  config.redirectUri,
     grant_type:    'authorization_code',
   });
-
   const { access_token, refresh_token } = tokenRes.data;
 
   const channelRes = await axios.get(
     'https://www.googleapis.com/youtube/v3/channels',
-    {
-      params:  { part: 'snippet', mine: true },
-      headers: { Authorization: `Bearer ${access_token}` },
-    }
+    { params: { part: 'snippet', mine: true }, headers: { Authorization: `Bearer ${access_token}` } }
   );
-
   const channel      = channelRes.data.items?.[0];
   const channelId    = channel?.id;
   const channelTitle = channel?.snippet?.title || 'YouTube Channel';
   const avatarUrl    = channel?.snippet?.thumbnails?.default?.url;
 
   await saveAccount({
+    user_id,
     platform:         'youtube',
     platform_user_id: channelId,
     username:         channelTitle.toLowerCase().replace(/\s+/g, ''),
@@ -367,8 +374,6 @@ async function handleYouTubeCallback(req, res, config) {
     avatar_url:       avatarUrl,
     access_token:     encrypt(access_token),
     refresh_token:    refresh_token ? encrypt(refresh_token) : null,
-    is_active:        true,
-    token_expired:    false,
     status:           'connected',
   });
 

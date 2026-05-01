@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:app_links/app_links.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -33,10 +34,14 @@ class OAuthService {
   /// Launch OAuth for a platform and wait for the deep link callback.
   /// Returns [OAuthResult] with success/error info.
   Future<OAuthResult> connect(SocialPlatform platform) async {
+    // Get Firebase UID to pass as state (backend links account to user)
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+
     // Exactly: final url = '${AppConfig.apiBaseUrl}/oauth/$platform';
     final url = Uri.parse(
       '${AppConfig.apiBaseUrl}/oauth/${platform.id}'
-      '?redirect_uri=${Uri.encodeComponent(AppConfig.oauthRedirectUri)}',
+      '?state=${Uri.encodeComponent(uid)}'
+      '&redirect_uri=${Uri.encodeComponent(AppConfig.oauthRedirectUri)}',
     );
 
     debugPrint('── OAuth LAUNCH ─────────────────────────');
