@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_theme.dart';
@@ -13,8 +15,58 @@ class AccountsScreen extends ConsumerStatefulWidget {
 }
 
 class _AccountsScreenState extends ConsumerState<AccountsScreen> {
+  final _appLinks = AppLinks();
+  StreamSubscription<Uri>? _linkSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _startListening();
+  }
+
+  @override
+  void dispose() {
+    _linkSub?.cancel();
+    super.dispose();
+  }
+
+  void _startListening() {
+    _linkSub = _appLinks.uriLinkStream.listen((uri) {
+      if (uri.scheme == 'autopostai') {
+        final success  = uri.queryParameters['success'] == 'true';
+        final platform = uri.queryParameters['platform'];
+        final error    = uri.queryParameters['error'];
+
+        if (success) {
+          // Refresh accounts list
+          ref.invalidate(accountsProvider);
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('$platform connected ✅'),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 3),
+            ));
+          }
+        } else {
+          if (mounted) {
+            final msg = error != null
+                ? Uri.decodeComponent(error)
+                : 'Connection failed. Please try again.';
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(msg),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ));
+          }
+        }
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final accountsAsync = ref.watch(accountsProvider);
     final accountsAsync = ref.watch(accountsProvider);
 
     return Scaffold(
