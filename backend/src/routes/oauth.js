@@ -17,6 +17,41 @@ const { logger }   = require('../utils/logger');
 const MOBILE_SCHEME = 'autopostai://oauth-result';
 const APP_URL       = process.env.APP_URL || 'http://localhost:5000';
 
+// ── In-memory state store (use Redis in production) ───────────
+// Maps state token → { userId, platform, expiresAt }
+const stateStore = new Map();
+
+function storeState(state, userId, platform) {
+  stateStore.set(state, {
+    userId,
+    platform,
+    expiresAt: Date.now() + 10 * 60 * 1000, // 10 min TTL
+  });
+}
+
+function validateState(state) {
+  const entry = stateStore.get(state);
+  if (!entry) return null;
+
+  // Check expiry
+  if (Date.now() > entry.expiresAt) {
+    stateStore.delete(state);
+    return null;
+  }
+
+  // One-time use — delete after validation
+  stateStore.delete(state);
+  return entry;
+}
+
+// Clean up expired states every 15 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of stateStore.entries()) {
+    if (now > val.expiresAt) stateStore.delete(key);
+  }
+}, 15 * 60 * 1000);
+
 // ── Platform config map ───────────────────────────────────────
 function getPlatformConfig(platform) {
   const configs = {
@@ -74,13 +109,6 @@ function oauthSuccess(res, platform, username) {
   );
 }
 
-// ── Extract user_id from state param ─────────────────────────
-// Flutter passes Firebase UID as state: ?state=<uid>
-function getUserIdFromState(state) {
-  if (!state || state === 'state') return null;
-  return state;
-}
-
 // ── saveAccount ───────────────────────────────────────────────
 // Exactly: await saveAccount({ user_id, platform, access_token, status: 'connected' })
 async function saveAccount({ user_id, platform, platform_user_id, username,
@@ -130,7 +158,7 @@ async function saveAccount({ user_id, platform, platform_user_id, username,
 // ─────────────────────────────────────────────────────────────
 router.get('/:platform', (req, res) => {
   const { platform } = req.params;
-  const state = req.query.state || '';   // Firebase UID passed from Flutter
+  const userId = req.query.state || '';  // Firebase UID from Flutter
 
   const config = getPlatformConfig(platform);
 
@@ -147,7 +175,12 @@ router.get('/:platform', (req, res) => {
     });
   }
 
-  logger.info(`OAuth init: ${platform} (user: ${state || 'anonymous'})`);
+  // const state = userId; // or random token — send with OAuth URL
+  // Store state server-side for CSRF validation on callback
+  const state = userId || `anon_${Date.now()}`;
+  storeState(state, userId, platform);
+
+  logger.info(`OAuth init: ${platform} (user: ${userId || 'anonymous'}, state: ${state})`);
 
   let params;
 
@@ -201,14 +234,22 @@ router.get('/:platform/callback', async (req, res) => {
     return oauthError(res, 'No authorization code received');
   }
 
+  // ── CSRF state validation ─────────────────────────────────
+  // if (req.query.state !== expectedState) return res.status(400).send('Invalid state')
+  const stateEntry = validateState(state);
+  if (!stateEntry) {
+    logger.warn(`OAuth callback: invalid or expired state for ${platform} (state: ${state})`);
+    return oauthError(res, 'Invalid or expired state. Please try connecting again.');
+  }
+
   const config = getPlatformConfig(platform);
   if (!config) {
     return oauthError(res, `Unsupported platform: ${platform}`);
   }
 
-  // Extract Firebase UID from state param (passed by Flutter)
-  const user_id = getUserIdFromState(state);
-  logger.info(`OAuth callback: ${platform} (user_id: ${user_id || 'not provided'})`);
+  // user_id from validated state entry
+  const user_id = stateEntry.userId || null;
+  logger.info(`OAuth callback: ${platform} (user_id: ${user_id || 'not provided'}, state: valid ✓)`);
 
   try {
     switch (platform) {
