@@ -17,6 +17,7 @@ class AccountsScreen extends ConsumerStatefulWidget {
 class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   final _appLinks = AppLinks();
   StreamSubscription<Uri>? _linkSub;
+  bool _handled = false;
 
   @override
   void initState() {
@@ -32,37 +33,44 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
 
   void _startListening() {
     _linkSub = _appLinks.uriLinkStream.listen((uri) {
-      if (uri.scheme == 'autopostai') {
-        final success  = uri.queryParameters['success'] == 'true';
-        final platform = uri.queryParameters['platform'] ?? '';
-        final username = uri.queryParameters['username'] ?? '';
-        final error    = uri.queryParameters['error'];
+      if (_handled) return;
+      if (uri.scheme != 'autopostai') return;
+      _handled = true;
 
-        if (success) {
-          // autopostai://oauth-result?success=true&platform=facebook&username=jay
-          ref.invalidate(accountsProvider);
+      final success  = uri.queryParameters['success'] == 'true';
+      final platform = uri.queryParameters['platform'] ?? '';
+      final username = uri.queryParameters['username'] ?? '';
+      final error    = uri.queryParameters['error'];
 
-          if (mounted) {
-            final label = username.isNotEmpty ? '$platform (@$username)' : platform;
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('$label connected ✅'),
-              backgroundColor: Colors.green,
-              duration: const Duration(seconds: 3),
-            ));
-          }
-        } else {
-          if (mounted) {
-            final msg = error != null
-                ? Uri.decodeComponent(error)
-                : 'Connection failed. Please try again.';
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text(msg),
-              backgroundColor: Colors.red,
-              duration: const Duration(seconds: 4),
-            ));
-          }
+      if (success) {
+        // autopostai://oauth-result?success=true&platform=facebook&username=jay
+        ref.invalidate(accountsProvider);
+
+        if (mounted) {
+          final label = username.isNotEmpty ? '$platform (@$username)' : platform;
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('$label connected ✅'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ));
+        }
+      } else {
+        if (mounted) {
+          final msg = error != null
+              ? Uri.decodeComponent(error)
+              : 'Connection failed. Please try again.';
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(msg),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ));
         }
       }
+
+      // Reset after short delay so next OAuth connect works
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) _handled = false;
+      });
     });
   }
 
