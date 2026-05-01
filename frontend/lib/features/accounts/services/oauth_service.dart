@@ -33,9 +33,9 @@ class OAuthService {
   /// Launch OAuth for a platform and wait for the deep link callback.
   /// Returns [OAuthResult] with success/error info.
   Future<OAuthResult> connect(SocialPlatform platform) async {
-    // Build URL with deep link redirect
+    // Exactly: final url = '${AppConfig.apiBaseUrl}/oauth/$platform';
     final url = Uri.parse(
-      '${AppConfig.apiBaseUrl}${platform.oauthPath}'
+      '${AppConfig.apiBaseUrl}/oauth/${platform.id}'
       '?redirect_uri=${Uri.encodeComponent(AppConfig.oauthRedirectUri)}',
     );
 
@@ -43,7 +43,6 @@ class OAuthService {
     debugPrint('Platform: ${platform.label}');
     debugPrint('URL: $url');
 
-    // Check if browser can be opened
     if (!await canLaunchUrl(url)) {
       return const OAuthResult(
         success: false,
@@ -51,7 +50,6 @@ class OAuthService {
       );
     }
 
-    // Set up deep link listener BEFORE launching browser
     final completer = Completer<OAuthResult>();
     _pendingCompleter = completer;
 
@@ -69,7 +67,8 @@ class OAuthService {
       },
     );
 
-    // Launch browser
+    // Launch browser — exactly as requested:
+    // await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
     try {
       await launchUrl(url, mode: LaunchMode.externalApplication);
     } catch (e) {
