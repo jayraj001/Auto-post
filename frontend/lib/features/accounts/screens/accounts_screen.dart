@@ -34,16 +34,18 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     _linkSub = _appLinks.uriLinkStream.listen((uri) {
       if (uri.scheme == 'autopostai') {
         final success  = uri.queryParameters['success'] == 'true';
-        final platform = uri.queryParameters['platform'];
+        final platform = uri.queryParameters['platform'] ?? '';
+        final username = uri.queryParameters['username'] ?? '';
         final error    = uri.queryParameters['error'];
 
         if (success) {
-          // Refresh accounts list
+          // autopostai://oauth-result?success=true&platform=facebook&username=jay
           ref.invalidate(accountsProvider);
 
           if (mounted) {
+            final label = username.isNotEmpty ? '$platform (@$username)' : platform;
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('$platform connected ✅'),
+              content: Text('$label connected ✅'),
               backgroundColor: Colors.green,
               duration: const Duration(seconds: 3),
             ));
