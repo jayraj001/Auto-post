@@ -35,6 +35,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     _linkSub = _appLinks.uriLinkStream.listen((uri) {
       if (_handled) return;
       if (uri.scheme != 'autopostai') return;
+      if (!uri.queryParameters.containsKey('success')) return;
       _handled = true;
 
       final success  = uri.queryParameters['success'] == 'true';
