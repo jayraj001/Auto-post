@@ -34,19 +34,20 @@ class OAuthService {
   /// Launch OAuth for a platform and wait for the deep link callback.
   /// Returns [OAuthResult] with success/error info.
   Future<OAuthResult> connect(SocialPlatform platform) async {
-    // Get Firebase UID to pass as state (backend links account to user)
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    // const state = userId; // Firebase UID links the OAuth account to the user
+    final state = FirebaseAuth.instance.currentUser?.uid ?? '';
 
-    // Exactly: final url = '${AppConfig.apiBaseUrl}/oauth/$platform';
+    // Send state with OAuth URL so backend knows which user to link
     final url = Uri.parse(
       '${AppConfig.apiBaseUrl}/oauth/${platform.id}'
-      '?state=${Uri.encodeComponent(uid)}'
+      '?state=${Uri.encodeComponent(state)}'
       '&redirect_uri=${Uri.encodeComponent(AppConfig.oauthRedirectUri)}',
     );
 
     debugPrint('── OAuth LAUNCH ─────────────────────────');
-    debugPrint('Platform: ${platform.label}');
-    debugPrint('URL: $url');
+    debugPrint('Platform : ${platform.label}');
+    debugPrint('State    : $state');
+    debugPrint('URL      : $url');
 
     if (!await canLaunchUrl(url)) {
       return const OAuthResult(
