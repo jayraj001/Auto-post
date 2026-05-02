@@ -104,7 +104,8 @@ CREATE TABLE IF NOT EXISTS post_results (
                       CHECK (status IN ('pending','published','failed')),
   error_message     TEXT,
   published_at      TIMESTAMPTZ,
-  created_at        TIMESTAMPTZ DEFAULT NOW()
+  created_at        TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(post_id, platform)         -- idempotency: one result per post per platform
 );
 
 -- ============================================================

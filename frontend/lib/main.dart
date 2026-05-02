@@ -5,9 +5,13 @@ import 'firebase_options.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_mode_provider.dart';
+import 'core/errors/error_handler.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Global error handling
+  setupGlobalErrorHandling();
 
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,

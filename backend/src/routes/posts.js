@@ -174,4 +174,30 @@ router.post('/:id/repost', authenticate, async (req, res) => {
   res.status(201).json(repost);
 });
 
+// ── Retry failed post ─────────────────────────────────────────
+router.post('/:id/retry', authenticate, async (req, res) => {
+  const { data: post } = await supabase.from('posts')
+    .select('*').eq('id', req.params.id).eq('user_id', req.user.id).single();
+
+  if (!post) return res.status(404).json({ error: 'Post not found' });
+
+  if (!['failed', 'partial'].includes(post.status)) {
+    return res.status(400).json({
+      error: `Cannot retry post with status: ${post.status}`,
+      code:  'INVALID_STATUS',
+    });
+  }
+
+  // Reset status to scheduled
+  await supabase.from('posts').update({
+    status:     'scheduled',
+    updated_at: new Date().toISOString(),
+  }).eq('id', post.id);
+
+  // Re-queue with high priority
+  await postQueue.add('publish-post', { postId: post.id }, { priority: 1 });
+
+  res.json({ message: 'Post queued for retry', postId: post.id });
+});
+
 module.exports = router;
